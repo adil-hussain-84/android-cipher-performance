@@ -5,6 +5,7 @@ import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
 import android.widget.TextView;
 
+import java.security.Key;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.Random;
@@ -17,19 +18,14 @@ import butterknife.OnClick;
 
 public class MainActivity extends AppCompatActivity {
 
-    private static final int NUM_ITEMS = 20;
+    private static final String KEY_ALIAS = "MySecretKey";
 
     @BindView(R.id.textViewResult)
     TextView textViewResult;
 
-    private byte[][] unencryptedDataList;
-    private byte[][] encryptedDataList;
-    private byte[][] initVectorList;
-    private SecretKey[] secretKeyList;
-
-    private AESKeyGenerator secretKeyGenerator;
-    private AESKeyGenerator initVectorGenerator;
-    private Random dataGenerator;
+    private byte[] unencryptedData;
+    private byte[] encryptedData;
+    private byte[] initVector;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -37,11 +33,11 @@ public class MainActivity extends AppCompatActivity {
 
         setContentView(R.layout.activity_main);
         ButterKnife.bind(this);
+    }
 
-        unencryptedDataList = new byte[NUM_ITEMS][];
-        encryptedDataList = new byte[NUM_ITEMS][];
-        initVectorList = new byte[NUM_ITEMS][];
-        secretKeyList = new SecretKey[NUM_ITEMS];
+    @OnClick(R.id.buttonCreateSecretKey)
+    void onCreateSecretKeyClick() {
+        new CreateSecretKeyAsyncTask().execute();
     }
 
     @OnClick(R.id.buttonEncryptData)
@@ -54,37 +50,38 @@ public class MainActivity extends AppCompatActivity {
         new DecryptDataAsyncTask().execute();
     }
 
-    private AESKeyGenerator getSecretKeyGenerator() throws CryptoException {
-        if (secretKeyGenerator == null) {
-            secretKeyGenerator = new AESKeyGenerator(256);
-        }
+    /**
+     * @return the {@link SecretKey} instance in the Android KeyStore
+     * which this app will use for encryption and decryption.
+     * @throws CryptoException if the {@link SecretKey} instance could not be retrieved.
+     */
+    private SecretKey getSecretKey() throws CryptoException {
+        try {
+            KeyStoreProxy keyStoreProxy = new KeyStoreProvider().provide();
+            Key key = keyStoreProxy.getKey(KEY_ALIAS);
 
-        return secretKeyGenerator;
+            if (key == null) {
+                throw new CryptoException("Failed getting secret key from the Android KeyStore");
+            } else if (key instanceof SecretKey) {
+                return (SecretKey) key;
+            } else {
+                throw new CryptoException("Retrieved KeyStore entry but it's not of the expected type");
+            }
+        } catch (Exception e) {
+            throw new CryptoException("Failed getting secret key", e);
+        }
     }
 
-    private AESKeyGenerator getInitVectorGenerator() throws CryptoException {
-        if (initVectorGenerator == null) {
-            initVectorGenerator = new AESKeyGenerator(128);
-        }
-
-        return initVectorGenerator;
-    }
-
-    private Random getDataGenerator() {
-        if (dataGenerator == null) {
-            dataGenerator = new Random();
-        }
-
-        return dataGenerator;
-    }
-
-    private class EncryptDataAsyncTask extends AsyncTask<Void, Void, Void> {
+    /**
+     * Creates a {@link SecretKey} instance and saves it in the Android KeyStore.
+     */
+    private class CreateSecretKeyAsyncTask extends AsyncTask<Void, Void, Void> {
 
         private Long executionTimeMillis;
 
         @Override
-        protected void onPreExecute () {
-            textViewResult.setText("Encrypting data...");
+        protected void onPreExecute() {
+            textViewResult.setText("Creating secret key...");
         }
 
         @Override
@@ -92,28 +89,62 @@ public class MainActivity extends AppCompatActivity {
             try {
                 long startTimeMillis = new Date().getTime();
 
-                AESKeyGenerator secretKeyGenerator = getSecretKeyGenerator();
-                AESKeyGenerator initVectorGenerator = getInitVectorGenerator();
-                Random dataGenerator = getDataGenerator();
+                AESKeyGenerator secretKeyGenerator = new AESKeyGenerator(256);
+                SecretKey secretKey = secretKeyGenerator.generateSecretKey();
 
-                for (int i = 0; i < NUM_ITEMS; i++) {
-                    byte[] unencryptedData = new byte[9999];
-                    dataGenerator.nextBytes(unencryptedData);
-
-                    byte[] initVector = initVectorGenerator.generateSecretKey().getEncoded();
-                    SecretKey secretKey = secretKeyGenerator.generateSecretKey();
-
-                    AESBytesEncryptor aesBytesEncryptor = new AESBytesEncryptor(secretKey);
-                    byte[] encryptedData = aesBytesEncryptor.encrypt(unencryptedData, initVector);
-
-                    unencryptedDataList[i] = unencryptedData;
-                    encryptedDataList[i] = encryptedData;
-                    initVectorList[i] = initVector;
-                    secretKeyList[i] = secretKey;
-                }
+                KeyStoreProxy keyStoreProxy = new KeyStoreProvider().provide();
+                keyStoreProxy.setEntry(KEY_ALIAS, secretKey);
 
                 long endTimeMillis = new Date().getTime();
+                executionTimeMillis = endTimeMillis - startTimeMillis;
+            } catch (Exception e) {
+                executionTimeMillis = null;
+            }
 
+            return null;
+        }
+
+        @Override
+        protected void onPostExecute(Void result) {
+            if (executionTimeMillis == null) {
+                textViewResult.setText("Failed creating secret key.");
+            } else {
+                textViewResult.setText(String.format("Created secret key in %d milliseconds", executionTimeMillis));
+            }
+        }
+    }
+
+    /**
+     * Encrypts a random array of 999 bytes using the {@link SecretKey} instance
+     * that is saved in the Android Keystore.
+     */
+    private class EncryptDataAsyncTask extends AsyncTask<Void, Void, Void> {
+
+        private Long executionTimeMillis;
+
+        @Override
+        protected void onPreExecute() {
+            textViewResult.setText("Encrypting data...");
+        }
+
+        @Override
+        protected Void doInBackground(Void... params) {
+            try {
+                SecretKey secretKey = getSecretKey();
+
+                long startTimeMillis = new Date().getTime();
+
+                unencryptedData = new byte[999];
+                Random dataGenerator = new Random();
+                dataGenerator.nextBytes(unencryptedData);
+
+                AESKeyGenerator initVectorGenerator = new AESKeyGenerator(128);;
+                initVector = initVectorGenerator.generateSecretKey().getEncoded();
+
+                AESBytesEncryptor aesBytesEncryptor = new AESBytesEncryptor(secretKey);
+                encryptedData = aesBytesEncryptor.encrypt(unencryptedData, initVector);
+
+                long endTimeMillis = new Date().getTime();
                 executionTimeMillis = endTimeMillis - startTimeMillis;
             } catch (CryptoException e) {
                 executionTimeMillis = null;
@@ -132,36 +163,34 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Decrypts the encrypted data using the {@link SecretKey} instance
+     * that is saved in the Android Keystore.
+     */
     private class DecryptDataAsyncTask extends AsyncTask<Void, Void, Void> {
 
         private Long executionTimeMillis;
 
         @Override
-        protected void onPreExecute () {
+        protected void onPreExecute() {
             textViewResult.setText("Decrypting data...");
         }
 
         @Override
         protected Void doInBackground(Void... params) {
             try {
+                SecretKey secretKey = getSecretKey();
+
                 long startTimeMillis = new Date().getTime();
 
-                for (int i = 0; i < NUM_ITEMS; i++) {
-                    byte[] unencryptedData = unencryptedDataList[i];
-                    byte[] encryptedData = encryptedDataList[i];
-                    byte[] initVector = initVectorList[i];
-                    SecretKey secretKey = secretKeyList[i];
+                AESBytesDecryptor aesBytesDecryptor = new AESBytesDecryptor(secretKey);
+                byte[] decryptedData = aesBytesDecryptor.decrypt(encryptedData, initVector);
 
-                    AESBytesDecryptor aesBytesDecryptor = new AESBytesDecryptor(secretKey);
-                    byte[] decryptedData = aesBytesDecryptor.decrypt(encryptedData, initVector);
-
-                    if (!Arrays.equals(unencryptedData, decryptedData)) {
-                        throw new CryptoException("Unencrypted data and Decrypted data do not match.");
-                    }
+                if (!Arrays.equals(unencryptedData, decryptedData)) {
+                    throw new CryptoException("Unencrypted data and Decrypted data do not match.");
                 }
 
                 long endTimeMillis = new Date().getTime();
-
                 executionTimeMillis = endTimeMillis - startTimeMillis;
             } catch (CryptoException e) {
                 executionTimeMillis = null;

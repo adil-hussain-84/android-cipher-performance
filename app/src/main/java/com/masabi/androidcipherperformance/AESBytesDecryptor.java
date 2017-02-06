@@ -1,7 +1,6 @@
 package com.masabi.androidcipherperformance;
 
 import android.support.annotation.NonNull;
-import android.util.Log;
 
 import java.security.spec.AlgorithmParameterSpec;
 
@@ -11,12 +10,11 @@ import javax.crypto.spec.IvParameterSpec;
 
 public class AESBytesDecryptor {
 
-    private static final String TAG = AESBytesDecryptor.class.getSimpleName();
-
+    /** The {@link Cipher} instance to use for decryption. */
     @NonNull
     private final Cipher cipherDecrypt;
 
-    /** The key to use for decryption. */
+    /** The {@link SecretKey} instance to use for decryption. */
     @NonNull
     private final SecretKey secretKey;
 
@@ -33,7 +31,6 @@ public class AESBytesDecryptor {
             cipherDecrypt = Cipher.getInstance("AES/CBC/PKCS7PADDING");
         } catch (Exception ex) {
             String message = "Failed setting up Cipher instances for encryption and decryption";
-            Log.e(TAG, message);
             throw new CryptoException(message, ex);
         }
     }
@@ -42,7 +39,7 @@ public class AESBytesDecryptor {
     public byte[] decrypt(@NonNull byte[] inputBytes,
                           @NonNull byte[] initVectorBytes) throws CryptoException {
         try {
-            AlgorithmParameterSpec params = getAlgorithmParameterSpec(initVectorBytes);
+            AlgorithmParameterSpec params = new IvParameterSpec(initVectorBytes);
 
             synchronized (cipherDecrypt) {
                 cipherDecrypt.init(Cipher.DECRYPT_MODE, secretKey, params);
@@ -50,19 +47,7 @@ public class AESBytesDecryptor {
             }
         } catch (Exception ex) {
             String message = "Failed decryption";
-            Log.e(TAG, message);
             throw new CryptoException(message, ex);
         }
-    }
-
-    /**
-     * Wraps the given initialization vector in a {@link AlgorithmParameterSpec} object.
-     *
-     * @param initVectorBytes is a byte array that has a length value which is suitable for an AES encryption initialization vector.
-     * @return a new {@link AlgorithmParameterSpec} object that wraps {@code initVectorBytes}.
-     */
-    @NonNull
-    private AlgorithmParameterSpec getAlgorithmParameterSpec(@NonNull byte[] initVectorBytes) {
-        return new IvParameterSpec(initVectorBytes);
     }
 }
