@@ -1,2 +1,4 @@
-# android-cipher-performance
-This Android application demonstrates performance problems with calls to the `javax.crypto.Cipher.init` method on Google Pixel devices.
+# Android Cipher Performance
+This Android application demonstrates how encrypting and decrypting data using a **SecretKey** that is retrieved from the **Android KeyStore** is 5 times slower on the Google Pixel device running Android Nougat as compared to other Android devices running Android Nougat (or Android Marshmallow).
+<p>
+Press the buttons below to encrypt and decrypt 999 bytes of random data using **AES/CBC/PKCS7PADDING** encryption with a key of size 256 bits and an initialization vector of size 128 bits. You will observe that this operation takes 100+ milliseconds on a Google Pixel device but only ~20 milliseconds on other Android devices (e.g. Samsung Galaxy S7, LG Nexus 5X).
